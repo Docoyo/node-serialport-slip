@@ -16,8 +16,7 @@
     "url": "https://github.com/BorisChumichev/node-serialport-slip"
   },
   "dependencies": {
-    "buffertools": "^2.1.4",
-    "serialport": "^4.0.1",
+    "serialport": "^6.2.0",
     "underscore": "^1.8.3"
   },
   "devDependencies": {

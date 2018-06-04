@@ -3,13 +3,14 @@
 /**
  * Dependencies
  */
-var SerialPort = require("serialport")
-    , util = require('util')
-    , bt = require('buffertools')
-    , SLIPMessage = require('./slip-message.js')
-    , fs = require('fs')
-    , defaultProtocolDefinition = JSON.parse(fs.readFileSync(__dirname + '/default-protocol-definition.json', {encoding: 'utf8'}))
-    , _ = require('underscore')
+const SerialPort = require("serialport");
+const util = require('util');
+const SLIPMessage = require('./slip-message.js');
+const fs = require('fs');
+const defaultProtocolDefinition = JSON.parse(fs.readFileSync(__dirname + '/default-protocol-definition.json', {
+  encoding: 'utf8'
+}));
+const _ = require('underscore');
 
 /**
  * @param {String} path           path to serial port
@@ -18,17 +19,17 @@ var SerialPort = require("serialport")
  * @constructor
  */
 var SLIP = function (path, options, protocol) {
-  var that = this
   //super constructor call
   SerialPort.call(this, path, options)
   protocol = _.defaults(protocol ? protocol : {}, defaultProtocolDefinition)
   SLIPMessage.applyProtocol(protocol)
   this.protocol_ = protocol
   this.endByte_ = new Buffer([protocol.endByte])
+  this.messageMaxLength_ = protocol.messageMaxLength;
   // register on data handler
-  this.on('data', function (data) {
-    that.collectDataAndFireMessageEvent_(data)
-  })
+  this.on('data', (data) => {
+    this.collectDataAndFireMessageEvent_(data)
+  });
 }
 
 util.inherits(SLIP, SerialPort)
@@ -66,39 +67,46 @@ SLIP.prototype.sendMessageAndDrain = function (buffer, callback) {
  * @param  {Buffer}   data
  */
 SLIP.prototype.collectDataAndFireMessageEvent_ = (function () {
-  var temporaryBuffer = new Buffer(256)
-      , writeCursor = 0
-      , emptyBuffer = new Buffer(256);
+  let temporaryBuffer = Buffer.alloc(defaultProtocolDefinition.messageMaxLength);
+  let writeCursor = 0;
+  let emptyBuffer = Buffer.alloc(defaultProtocolDefinition.messageMaxLength);
 
-  bt.clear(emptyBuffer);
+  emptyBuffer.fill(0);
 
   return function (data) {
-    var endIndex = bt.indexOf(data, this.endByte_);
+    var endIndex = data.indexOf(this.endByte_);
     if (endIndex === -1) {
       //chunk has no endByte, pushing it to temporary buffer
       writeCursor += data.copy(temporaryBuffer, writeCursor);
     } else {
       if (endIndex > 0) {
         //chunk has data before endByte
-        writeCursor += data.copy(temporaryBuffer, writeCursor, 0, endIndex);
+        writeCursor += data.copy(temporaryBuffer, writeCursor);
       }
-      //copy data from temporary buffer to a new buffer and fire 'message'
-      var messageBuffer = new Buffer(writeCursor);
 
-      // Don't send a message if the buffer is empty and all we received was an end byte
-      if (!bt.equals(temporaryBuffer, emptyBuffer) || writeCursor !== 0) {
-        temporaryBuffer.copy(messageBuffer, 0, 0, writeCursor);
+      // If multiple messages, find first one
+      let firstMessageEnd;
+      while ((firstMessageEnd = temporaryBuffer.indexOf(this.endByte_)) > 0) {
+
+        //copy data from temporary buffer to a new buffer and fire 'message'
+        var messageBuffer = Buffer.alloc(firstMessageEnd);
+
+        temporaryBuffer.copy(messageBuffer, 0, 0, firstMessageEnd);
+
         this.emit('message', SLIPMessage.unescape(messageBuffer));
 
-      }
-
-      bt.clear(temporaryBuffer);
-
-      writeCursor = 0;
-
-      if (data.length - 2 > endIndex) {
-        //if has data after endByte
-        writeCursor += data.copy(temporaryBuffer, 0, endIndex + 1, data.length);
+        // buffer end reached... clear 
+        if (firstMessageEnd + 1 === writeCursor) {
+          temporaryBuffer.fill(0, 0, writeCursor);
+          writeCursor = 0;
+          firstMessageEnd = -1;
+        } else { // check if further messages to read
+          temporaryBuffer.copy(temporaryBuffer, 0, firstMessageEnd + 1, writeCursor); 
+          let oldWriteCursor = writeCursor;
+          writeCursor -= firstMessageEnd + 1;
+          temporaryBuffer.fill(0, writeCursor, oldWriteCursor);
+          endIndex = temporaryBuffer.indexOf(this.endByte_);
+        }
       }
     }
   }
