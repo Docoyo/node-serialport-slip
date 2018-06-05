@@ -3,8 +3,7 @@
 /**
  * dependencies
  */
-var bt = require('buffertools')
-    , _ = require('underscore')
+const _ = require('underscore');
 
 /**
  * SLIPMessage class
@@ -91,7 +90,7 @@ SLIPMessage.prototype.buildReplacementMap_ = function (buffer) {
         , searchCursor = 0
         , endOfBuffer = false;
     while (!endOfBuffer) {
-      var index = bt.indexOf(buffer, new Buffer([rule.initialFragment]), searchCursor);
+      var index = buffer.indexOf(new Buffer([rule.initialFragment]), searchCursor);
       if (index !== -1) {
         bytesToReplace.push({index: index, replaceTo: rule.replacement});
         searchCursor = index + 1;
